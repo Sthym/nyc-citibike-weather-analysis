@@ -1,0 +1,62 @@
+# =========================================================
+# Credentials & secrets — NEVER commit these
+# =========================================================
+.env
+.env.*
+!.env.example
+*service-account*.json
+*credentials*.json
+*.pem
+*.key
+secrets/
+credentials/
+
+# GCP local config
+gcloud-config/
+.gcloudignore
+
+# =========================================================
+# Python
+# =========================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# =========================================================
+# Data — raw/interim/processed data is never committed.
+# Only code, SQL, and docs live in version control.
+# =========================================================
+data/raw/**
+data/interim/**
+data/processed/**
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# =========================================================
+# Notebooks
+# =========================================================
+.ipynb_checkpoints/
+
+# =========================================================
+# OS / editor
+# =========================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# =========================================================
+# Logs & local artifacts
+# =========================================================
+*.log
+logs/
