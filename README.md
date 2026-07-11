@@ -50,6 +50,7 @@ roadmap and `TASKS.md` for the current backlog.
 | `TASKS.md` | Task backlog, organized by stage, with status |
 | `DECISIONS.md` | Architecture Decision Record (ADR) log — every material decision and assumption |
 | `DATA_DICTIONARY.md` | Known and assumed schemas for source data, weather data, and pipeline outputs |
+| `docs/source_data_profile.md` | Stage 1 investigation results: verified facts about the two provided BigQuery source tables and their join |
 | `CLAUDE.md` | Working agreement for any AI agent (or human) contributing to this repo |
 
 ## Repository structure
@@ -84,15 +85,28 @@ the folder structure is preserved in Git before code is added.
 ## Assumptions
 
 All assumptions are labeled and tracked in `DECISIONS.md` (entries marked
-"Proposed — needs confirmation"). Notable open assumptions as of Stage 0:
+"Proposed — needs confirmation"). Two of the three original open items are
+now confirmed by Stage 1 investigation (see `docs/source_data_profile.md`):
 
-- The ~13-year Citi Bike history is interpreted as program launch (2013)
-  through the most recently available month. See `DECISIONS.md` D-004.
-- The "provided daily weather table" is assumed to be supplied or identified
-  by the project owner rather than sourced by this pipeline. See
-  `DECISIONS.md` D-005.
-- Python (ETL) and SQL (transformation models) are assumed as the project's
-  primary languages. See `DECISIONS.md` D-007.
+- ~~The ~13-year Citi Bike history is interpreted as program launch (2013)
+  through the most recently available month.~~ **Confirmed:** the source
+  table's exact range is 2013-06-01 through 2026-05-31. See `DECISIONS.md`
+  D-004.
+- ~~The "provided daily weather table" is assumed to be supplied or
+  identified by the project owner.~~ **Confirmed:** the table is
+  `nyu-datasets.weather.m_weather_daily_nyc`, verified as one record per
+  date with no duplicates. See `DECISIONS.md` D-005.
+- Python (ETL) and SQL (transformation models) are still assumed as the
+  project's primary languages — not yet confirmed. See `DECISIONS.md`
+  D-007.
+
+Newer open items from Stage 1 investigation (see `DECISIONS.md` for full
+detail): 10 missing Citi Bike calendar dates (D-011), 251 days of
+rider-type reconciliation anomalies — most differences appear small but
+some larger differences were also observed, full distribution not yet
+documented (D-012) — and 24 confirmed missing dates in the weather table,
+whose specific dates remain unresolved (D-016). None of these have an
+assumed cause.
 
 ## Working agreement
 
