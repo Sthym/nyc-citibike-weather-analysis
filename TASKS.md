@@ -97,10 +97,55 @@ not resolved in this update, and `PROJECT_PLAN.md` is left as-is here.
 - [x] Document the Stage 3 destination schema in `DATA_DICTIONARY.md`
       (Section 5a)
 - [x] Run `python -m pytest tests/unit` locally — all passing
-- [ ] Owner review and approval of the Stage 3 prototype
-- [ ] Run `scripts/run_prototype_january_2025.py` against live BigQuery
+- [x] Owner review and approval of the Stage 3 prototype
+- [x] Run `scripts/run_prototype_january_2025.py` against live BigQuery
       and record the observed PASS/FAIL result in `ENGINEERING_LOG.md`
-- [ ] Commit and push Stage 3 (only after approval)
+- [x] Commit and push Stage 3 (tag: `stage3-complete`)
+
+## Stage 4 — Reusable Monthly ETL Pipeline
+
+- [x] Add `src/pipeline/month_period.py` — pure CLI-input parsing
+      (`parse_year_month`), live-range-based month validation
+      (`parse_month_period`, `compute_effective_range`), Stage 4
+      destination naming (`monthly_table_name`), and the shared
+      `load_destination_config` (moved out of the Stage 3 script so
+      neither script imports the other)
+- [x] Add `src/pipeline/monthly_pipeline.py` — the shared `execute()`
+      orchestration (exit codes, dry-run, validate-only, full run),
+      `gather_observed_data` (extracted from the Stage 3 script so
+      full-run and `--validate-only` share one code path instead of
+      duplicating query logic), and `estimate_bytes_processed` (live
+      BigQuery dry-run for `--dry-run`'s bytes estimate)
+- [x] Extend `src/loading/prototype_loader.py` with an optional
+      `table_name` override (backward-compatible; Stage 3 callers
+      unaffected) so Stage 4's `citibike_weather_monthly_*` naming and
+      Stage 3's `citibike_weather_prototype_*` naming can share one
+      loader
+- [x] Add `scripts/run_monthly_pipeline.py` — the new reusable CLI
+      (`--year`, `--month`, `--dry-run`, `--validate-only`)
+- [x] Convert `scripts/run_prototype_january_2025.py` into a thin
+      compatibility wrapper (NOT deleted) around
+      `src.pipeline.monthly_pipeline.execute`, fixed to `year=2025,
+      month=1`, preserving the original Stage 3 table name separately
+- [x] Add unit tests: `test_month_period.py`, `test_monthly_pipeline.py`
+      (all 8 exit-code paths), `test_run_monthly_pipeline_cli.py`
+      (argparse-level usage errors and mutual exclusion), plus
+      `TestTableNameOverride` in `test_prototype_loader.py` — all
+      mocked/fake, no network access
+- [x] Add `tests/integration/test_monthly_pipeline_live.py` — live
+      source-range retrieval, `--dry-run`, and `--validate-only`; opt-in
+      only via `RUN_LIVE_BIGQUERY_TESTS=1`; never calls `loader.load()`
+- [x] Log Stage 4 design decisions in `DECISIONS.md` (D-022–D-024)
+- [x] Run `python -m pytest` locally — all passing
+- [ ] Owner review and approval of the Stage 4 pipeline
+- [ ] Run `scripts/run_monthly_pipeline.py` against live BigQuery for at
+      least one month other than January 2025, and record results in
+      `ENGINEERING_LOG.md`
+- [ ] Commit, push, and tag Stage 4 (only after approval)
+- [ ] Run the full 2013–2026 historical range (explicitly out of scope
+      for Stage 4 — see Stage 4 design constraints)
+- [ ] Build the dashboard (explicitly out of scope for Stage 4)
+- [ ] Create scheduled jobs (explicitly out of scope for Stage 4)
 
 ## Stage 3 (PROJECT_PLAN.md numbering) — Transformation / Schema Standardization (full historical range)
 

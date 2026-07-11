@@ -165,6 +165,30 @@ Validation rules (V1–V11) implemented in
 through D-021 for the full rationale, including why V8/V9 are reported as
 source-quality findings rather than validation failures.
 
+## 5b. Stage 4 monthly pipeline — destination schema (any valid month)
+
+**Status: implemented (Stage 4), generalized from 5a.** Table:
+`{destination_project}.{destination_dataset}.citibike_weather_monthly_{YYYY}_{MM}`
+— note the `_monthly_` prefix, distinct from Stage 3's `_prototype_`
+naming (5a); the two coexist rather than one overwriting the other (see
+`DECISIONS.md` D-022). Column shape is byte-for-byte identical to 5a —
+same 15 Citi Bike columns, same derived `weekday`, same 8 curated
+weather fields, same `is_rainy`/`is_snowy` `CAST(... AS BOOL)`, same
+`weather_matched` flag — since `src/transformation/prototype_query.py`
+was reused unchanged (see `DECISIONS.md` D-022).
+
+**Availability:** a requested month is only valid if fully contained in
+the LIVE effective shared range — `max(citibike_min_date,
+weather_min_date)` through `min(citibike_max_date, weather_max_date)`,
+recomputed on every run (never a hardcoded constant, never derived from
+the current wall-clock date). A month only partially covered by the
+shared range is rejected, not truncated (`DECISIONS.md` D-023).
+
+Same V1–V11 validation rules as 5a (unchanged), plus matched/unmatched/
+match-rate reporting. Exit codes and `--dry-run`/`--validate-only`
+behavior: see `DECISIONS.md` D-024 and
+`src/pipeline/monthly_pipeline.py`.
+
 ## 6. Data-quality check reference
 
 These checks (implemented in `tests/data_quality/` during Stage 7, but

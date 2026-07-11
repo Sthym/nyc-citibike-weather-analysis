@@ -37,11 +37,13 @@ An end-to-end ETL pipeline that:
 
 ## Project status
 
-**Stage 3 — One-Month ETL Prototype (implemented, not yet reviewed/merged).**
-A read-only BigQuery metadata validator (Stage 2) and a one-month
-(January 2025) end-to-end extract-join-validate-load prototype (Stage 3)
-now exist. See `PROJECT_PLAN.md` for the full staged roadmap and
-`TASKS.md` for the current backlog.
+**Stage 4 — Reusable Monthly ETL Pipeline (implemented, not yet
+reviewed/merged).** A read-only BigQuery metadata validator (Stage 2),
+the original January-2025-only prototype (Stage 3, committed/pushed,
+tag `stage3-complete`), and a generalized CLI that runs the same
+extract-join-validate-load pipeline for any valid month (Stage 4) now
+exist. See `PROJECT_PLAN.md` for the full staged roadmap and `TASKS.md`
+for the current backlog.
 
 ## Key project documents
 
@@ -123,21 +125,39 @@ assumed cause.
 
 ## Getting started
 
-Two runnable entry points exist so far, both read-only except where noted:
+Three runnable entry points exist so far, all read-only except where noted:
 
 - `scripts/validate_source_metadata.py` (Stage 2) — validates the two
   provided source tables' metadata against verified Stage 1 findings.
   Read-only.
-- `scripts/run_prototype_january_2025.py` (Stage 3) — loads a one-month
-  (January 2025) join of the full Citi Bike shape and curated weather
-  fields into **your own** destination BigQuery project/dataset via an
+- `scripts/run_monthly_pipeline.py --year YYYY --month MM` (Stage 4) —
+  the general-purpose pipeline. Loads a one-month join of the full Citi
+  Bike shape and curated weather fields into **your own** destination
+  BigQuery project/dataset as `citibike_weather_monthly_YYYY_MM` via an
   idempotent `CREATE OR REPLACE TABLE`, then re-reads both source and
   destination tables to run the V1–V11 validation suite and prints a
-  PASS/FAIL report. This is the only script that writes anywhere, and it
-  only ever writes to the destination you configure below — never to the
-  `nyu-datasets` source project, and never by auto-creating a dataset.
+  PASS/FAIL report (matched/unmatched/match-rate included). Supports
+  `--dry-run` (builds and validates the SQL, reports a live bytes-processed
+  estimate, writes nothing) and `--validate-only` (re-validates an
+  existing destination table without replacing it) — the two are
+  mutually exclusive. See `src/pipeline/monthly_pipeline.py` for the
+  full exit-code table (0 success, 1 unexpected error, 2 CLI usage
+  error, 3 configuration error, 4 invalid/unavailable month, 5
+  authentication/query error, 6 load error, 7 validation failure).
+  Availability is determined live from both source tables' current
+  date ranges (never a hardcoded constant, never wall-clock "today");
+  a requested month must be FULLY covered by both sources or it's
+  rejected, not truncated.
+- `scripts/run_prototype_january_2025.py` (Stage 3, preserved as a thin
+  compatibility wrapper around the same pipeline, fixed to January 2025)
+  — writes to the original `citibike_weather_prototype_2025_01` table,
+  kept separate from anything the general Stage 4 CLI produces.
 
-To run either:
+All three only ever write to the destination you configure below —
+never to the `nyu-datasets` source project, and never by auto-creating
+a dataset.
+
+To run any of them:
 
 1. Install Python 3.10+ and the dependencies in `requirements.txt`
    (`pip install -r requirements.txt`).
@@ -148,17 +168,19 @@ To run either:
    project — see `config/.env.example`). `BQ_CITIBIKE_TABLE`,
    `BQ_WEATHER_TABLE`, and `BQ_LOCATION` all have verified defaults and
    don't need to be set unless you want to override them.
-4. For the Stage 3 prototype only: also set `BQ_DESTINATION_DATASET` to
-   an **existing** dataset in your own project (required, no default —
-   this script never creates one); `BQ_DESTINATION_PROJECT_ID` is
-   optional and defaults to `GCP_PROJECT_ID`.
-5. Run `python scripts/validate_source_metadata.py` and/or
-   `python scripts/run_prototype_january_2025.py`.
+4. For the pipeline scripts (not `validate_source_metadata.py`): also
+   set `BQ_DESTINATION_DATASET` to an **existing** dataset in your own
+   project (required, no default — never auto-created);
+   `BQ_DESTINATION_PROJECT_ID` is optional and defaults to
+   `GCP_PROJECT_ID`.
+5. Run whichever script(s) you need, e.g.
+   `python scripts/run_monthly_pipeline.py --year 2025 --month 2 --dry-run`.
 
-Unit tests (`python -m pytest tests/unit`) require no live BigQuery access
-and no credentials — they run entirely against mocked/fake clients and
-in-memory fixtures. `pytest.ini` limits default test discovery to
-`tests/unit`; the one live-write check
-(`tests/integration/test_prototype_live.py`) is excluded by default and
-must be run explicitly:
+Unit tests (`python -m pytest` or `python -m pytest tests/unit`) require
+no live BigQuery access and no credentials — they run entirely against
+mocked/fake clients and in-memory fixtures. `pytest.ini` limits default
+test discovery to `tests/unit`; the live-write checks
+(`tests/integration/test_prototype_live.py`,
+`tests/integration/test_monthly_pipeline_live.py`) are excluded by
+default and must be run explicitly:
 `RUN_LIVE_BIGQUERY_TESTS=1 python -m pytest tests/integration -m integration`.

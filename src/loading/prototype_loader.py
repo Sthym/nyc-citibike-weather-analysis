@@ -57,18 +57,24 @@ class PrototypeLoader:
         month: int,
         citibike_table: str,
         weather_table: str,
+        table_name: Optional[str] = None,
     ) -> str:
         """Build (but do not execute) the full CREATE OR REPLACE TABLE
         statement. Split out from ``load`` so the generated SQL can be
         unit-tested without touching BigQuery.
+
+        ``table_name`` is an optional override for the derived Stage 3
+        name (``prototype_table_name(year, month)``). Stage 4's general
+        monthly CLI passes its own ``citibike_weather_monthly_YYYY_MM``
+        name here; when omitted, behavior is unchanged from Stage 3.
         """
         # Validate every table reference before any of them is ever
         # interpolated into SQL text -- source tables and destination alike.
         validate_table_id(citibike_table)
         validate_table_id(weather_table)
 
-        table_name = prototype_table_name(year, month)
-        destination_table_id = f"{destination_project}.{destination_dataset}.{table_name}"
+        resolved_table_name = table_name if table_name is not None else prototype_table_name(year, month)
+        destination_table_id = f"{destination_project}.{destination_dataset}.{resolved_table_name}"
         destination_ref = validate_table_id(destination_table_id)
         qualified_destination = (
             f"{destination_ref.project}.{destination_ref.dataset_id}.{destination_ref.table_id}"
@@ -88,15 +94,18 @@ class PrototypeLoader:
         weather_table: str,
         start_date: date,
         end_date: date,
+        table_name: Optional[str] = None,
     ) -> bigquery.TableReference:
         """Execute the CTAS load for the given month and return the
         destination table reference.
+
+        ``table_name`` is an optional override -- see ``build_load_ddl``.
         """
         validate_table_id(citibike_table)
         validate_table_id(weather_table)
 
-        table_name = prototype_table_name(year, month)
-        destination_table_id = f"{destination_project}.{destination_dataset}.{table_name}"
+        resolved_table_name = table_name if table_name is not None else prototype_table_name(year, month)
+        destination_table_id = f"{destination_project}.{destination_dataset}.{resolved_table_name}"
         destination_ref = validate_table_id(destination_table_id)
 
         ddl_sql = self.build_load_ddl(
@@ -106,6 +115,7 @@ class PrototypeLoader:
             month=month,
             citibike_table=citibike_table,
             weather_table=weather_table,
+            table_name=table_name,
         )
 
         job_config = bigquery.QueryJobConfig(

@@ -167,3 +167,68 @@ class TestLoad:
                 start_date=date(2025, 1, 1),
                 end_date=date(2025, 1, 31),
             )
+
+
+class TestTableNameOverride:
+    """Stage 4 addition: an explicit table_name overrides the derived
+    Stage 3 prototype_table_name(year, month), so callers with a
+    different naming convention (e.g. Stage 4's
+    citibike_weather_monthly_YYYY_MM) can reuse this loader unchanged.
+    """
+
+    def test_build_load_ddl_uses_override_when_given(self):
+        loader = PrototypeLoader(project="my-billing-project", client=FakeClient())
+        ddl = loader.build_load_ddl(
+            destination_project="my-billing-project",
+            destination_dataset="my_dataset",
+            year=2025,
+            month=2,
+            citibike_table="nyu-datasets.citibike.m_daily_trips",
+            weather_table="nyu-datasets.weather.m_weather_daily_nyc",
+            table_name="citibike_weather_monthly_2025_02",
+        )
+        assert "`my-billing-project.my_dataset.citibike_weather_monthly_2025_02`" in ddl
+        assert "prototype" not in ddl
+
+    def test_build_load_ddl_falls_back_to_derived_name_when_omitted(self):
+        loader = PrototypeLoader(project="my-billing-project", client=FakeClient())
+        ddl = loader.build_load_ddl(
+            destination_project="my-billing-project",
+            destination_dataset="my_dataset",
+            year=2025,
+            month=1,
+            citibike_table="nyu-datasets.citibike.m_daily_trips",
+            weather_table="nyu-datasets.weather.m_weather_daily_nyc",
+        )
+        assert "`my-billing-project.my_dataset.citibike_weather_prototype_2025_01`" in ddl
+
+    def test_load_uses_override_and_returns_matching_reference(self):
+        fake_client = FakeClient()
+        loader = PrototypeLoader(project="my-billing-project", client=fake_client)
+        ref = loader.load(
+            destination_project="my-billing-project",
+            destination_dataset="my_dataset",
+            year=2025,
+            month=2,
+            citibike_table="nyu-datasets.citibike.m_daily_trips",
+            weather_table="nyu-datasets.weather.m_weather_daily_nyc",
+            start_date=date(2025, 2, 1),
+            end_date=date(2025, 2, 28),
+            table_name="citibike_weather_monthly_2025_02",
+        )
+        assert ref.table_id == "citibike_weather_monthly_2025_02"
+
+    def test_load_default_behavior_unchanged_when_override_omitted(self):
+        fake_client = FakeClient()
+        loader = PrototypeLoader(project="my-billing-project", client=fake_client)
+        ref = loader.load(
+            destination_project="my-billing-project",
+            destination_dataset="my_dataset",
+            year=2025,
+            month=1,
+            citibike_table="nyu-datasets.citibike.m_daily_trips",
+            weather_table="nyu-datasets.weather.m_weather_daily_nyc",
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 1, 31),
+        )
+        assert ref.table_id == "citibike_weather_prototype_2025_01"

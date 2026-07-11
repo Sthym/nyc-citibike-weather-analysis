@@ -311,3 +311,71 @@ interpolated into SQL text. The validation report additionally surfaces
 `matched_weather_rows`, `unmatched_weather_rows`, and
 `weather_match_rate` (matched / total destination rows), extending the
 join-coverage reporting pattern already established for Stage 1 (D-015).
+
+### D-022 — Stage 4 destination naming: `citibike_weather_monthly_YYYY_MM`, kept separate from Stage 3's prototype table
+**Status:** Accepted
+**Context:** Stage 4 generalizes the Stage 3 prototype to any month.
+Reusing Stage 3's exact naming (`citibike_weather_prototype_YYYY_MM`)
+would mean re-running January 2025 through the new general CLI
+overwrites the original Stage 3 artifact.
+**Decision:** The Stage 4 CLI (`scripts/run_monthly_pipeline.py`) derives
+destination names as `citibike_weather_monthly_{year:04d}_{month:02d}`
+(`src.pipeline.month_period.monthly_table_name`) — a distinct prefix from
+Stage 3's `prototype_table_name`. `src/loading/prototype_loader.py`
+gained one small additive parameter (`table_name: Optional[str] = None`)
+so both naming schemes can share the same loader: when omitted, behavior
+is byte-for-byte unchanged from Stage 3. `scripts/run_prototype_
+january_2025.py` was converted into a thin compatibility wrapper (not
+deleted) around the shared `src.pipeline.monthly_pipeline.execute`, fixed
+to `year=2025, month=1`, and explicitly passes the ORIGINAL
+`prototype_table_name(2025, 1)` so that table is preserved as its own
+separate artifact from anything the general CLI produces for the same
+month.
+
+### D-023 — Availability is defined by the live, shared source range; partial months are rejected, not truncated
+**Status:** Accepted
+**Context:** "Reject future or unavailable periods" cannot be
+implemented against wall-clock "today" — the sandbox's calendar date can
+already be past the source tables' most recently loaded date (observed
+directly: this environment's current date is after the Stage 1-confirmed
+Citi Bike `max_date`). Availability also depends on BOTH source tables,
+which can have different, independently-updated ranges (D-015, D-016).
+**Decision:** `src.pipeline.month_period.compute_effective_range` derives
+`effective_min_date = max(citibike_min_date, weather_min_date)` and
+`effective_max_date = min(citibike_max_date, weather_max_date)` from a
+LIVE call to each source table (reusing Stage 2's unchanged
+`BigQueryReadOnlyClient.get_date_range_stats` for both tables) every time
+the pipeline runs — never a hardcoded constant, never derived from the
+current wall-clock date. `parse_month_period` then requires the
+requested month's ENTIRE `start_date..end_date` span to fall inside that
+live range; a month that only partially overlaps (e.g. the shared range
+ends mid-month) is rejected outright, not silently truncated to the
+covered portion. This keeps every loaded month structurally complete
+(consistent with V4's date-range check) rather than producing partial,
+easy-to-misread months.
+**Alternatives considered:** Truncating a partially-covered month to
+just its available days — rejected, since a partial month could be
+mistaken for a complete one downstream (e.g. in the eventual dashboard)
+without an explicit flag distinguishing it.
+
+### D-024 — Distinct exit codes; a real `--dry-run` requires live BigQuery access and never reports "unavailable" as success
+**Status:** Accepted
+**Context:** Automation (CI, scheduled runs) needs to distinguish *why*
+a run failed without parsing log text. Separately, an early design
+draft considered letting `--dry-run` degrade gracefully to "estimate
+unavailable" when no live BigQuery access exists — rejected as
+misleading, since a byte estimate is inherently a live BigQuery
+capability (`QueryJobConfig(dry_run=True)`), not something computable
+offline.
+**Decision:** `src/pipeline/monthly_pipeline.py` defines 8 exit codes:
+0 success, 1 unexpected error, 2 CLI usage error, 3 configuration error,
+4 invalid/unavailable month, 5 authentication/query error, 6 load error,
+7 validation failure. Live source-range retrieval and the `--dry-run`
+bytes estimate both require an authenticated, working BigQuery call; if
+either fails for any reason, the pipeline returns exit code 5
+(authentication/query error) — it never prints "unavailable" and returns
+success. `--dry-run` and `--validate-only` are mutually exclusive
+(enforced by argparse, itself an exit-code-2 usage error if violated),
+and neither one ever calls the loader's `CREATE OR REPLACE TABLE` path —
+a write only ever happens on a plain (non-dry-run, non-validate-only)
+invocation.
