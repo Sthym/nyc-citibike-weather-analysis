@@ -147,6 +147,55 @@ not resolved in this update, and `PROJECT_PLAN.md` is left as-is here.
 - [ ] Build the dashboard (explicitly out of scope for Stage 4)
 - [ ] Create scheduled jobs (explicitly out of scope for Stage 4)
 
+## Stage 5 — Multi-Month Batch Processing and Run Logging
+
+- [x] Add `src/pipeline/batch_period.py` — pure range enumeration
+      (`months_in_range`, chronological start<=end order checked as a
+      `CliUsageError`) and STRICT whole-range preflight validation
+      (`preflight_validate_range`, `BatchPreflightError`) that checks
+      every requested month against the live effective shared source
+      range before any month is processed, reusing
+      `month_period.parse_month_period` unchanged
+- [x] Add `src/pipeline/batch_log.py` — `JsonlBatchLogger`: one JSONL
+      run log per batch (`logs/batch_runs/batch_{run_id}.jsonl`, already
+      covered by `.gitignore`'s `logs/` pattern), with a unified
+      `"month_run"` record per REQUESTED month (attempted or skipped)
+      and one final `"batch_summary"` record (includes
+      `total_estimated_bytes`, null outside `--dry-run`)
+- [x] Add `src/pipeline/batch_pipeline.py` — `execute_batch()`: calls
+      `src.pipeline.monthly_pipeline.execute` once per month, unchanged
+      (no duplicated query/load/validation logic); stop-on-first-failure
+      by default, `--continue-on-error` to process every requested month
+      regardless of earlier failures; overall exit code is 0 if every
+      month succeeded, otherwise the exit code of the FIRST month that
+      failed IN CHRONOLOGICAL ORDER; whole-range preflight rejection
+      reuses Stage 4's exit code 4 (invalid/unavailable month, broadened
+      to "or range") — ZERO months processed; exit code 8 (new, logging
+      failure) is returned if the JSONL run log itself can't be written,
+      overriding any other outcome
+- [x] Add `scripts/run_batch_pipeline.py` — the batch CLI
+      (`--start-year`, `--start-month`, `--end-year`, `--end-month`,
+      `--dry-run`, `--validate-only`, `--continue-on-error`, `--log-dir`)
+- [x] Add unit tests: `test_batch_period.py`, `test_batch_log.py`,
+      `test_batch_pipeline.py` (preflight, stop-on-first-failure,
+      continue-on-error, mode pass-through, logging/summary counts, and
+      an explicit check that the default `execute_month` IS Stage 4's
+      real `execute` function), `test_run_batch_pipeline_cli.py`
+      (argparse-level usage errors, mutual exclusion, range ordering) —
+      all mocked/fake, no network access
+- [x] Add `tests/integration/test_batch_pipeline_live.py` — live
+      multi-month `--dry-run` and `--validate-only`; opt-in only via
+      `RUN_LIVE_BIGQUERY_TESTS=1`; never calls `loader.load()`
+- [x] Log Stage 5 design decisions in `DECISIONS.md` (D-025, D-026;
+      both revised before commit to correct the exit-code/logging
+      scheme per owner review)
+- [x] Run `python -m pytest` locally — all passing (199 = 140 Stage
+      0-4 + 59 new)
+- [ ] Owner review and approval of the Stage 5 batch pipeline
+- [ ] Run `scripts/run_batch_pipeline.py` against live BigQuery for a
+      multi-month range and record results in `ENGINEERING_LOG.md`
+- [ ] Commit, push, and tag Stage 5 (only after approval)
+
 ## Stage 3 (PROJECT_PLAN.md numbering) — Transformation / Schema Standardization (full historical range)
 
 - [ ] Define canonical trip-level schema in `DATA_DICTIONARY.md`

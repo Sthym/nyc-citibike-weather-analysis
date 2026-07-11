@@ -379,3 +379,103 @@ success. `--dry-run` and `--validate-only` are mutually exclusive
 and neither one ever calls the loader's `CREATE OR REPLACE TABLE` path —
 a write only ever happens on a plain (non-dry-run, non-validate-only)
 invocation.
+
+### D-025 — Stage 5 batch scope: reuse Stage 4's `execute()` per month, strict whole-range preflight reuses exit code 4, stop-on-first-failure by default
+**Status:** Accepted (revised before commit — see note below)
+**Context:** Running many months one at a time via
+`scripts/run_monthly_pipeline.py` is tedious and gives no single record
+of what happened across a multi-month run. The requirement was explicit
+that batch processing must not re-implement any query, load, or
+validation logic — Stage 4's `execute()` already owns that, fully
+tested. The project's approved exit-code table treats every code as a
+distinct, stable failure category shared across Stage 4 and Stage 5:
+0 success, 1 unexpected internal error, 2 CLI usage error, 3
+configuration error, 4 invalid or unavailable month/range, 5
+authentication/query error, 6 load error, 7 validation failure, 8
+logging failure.
+**Decision:** `src/pipeline/batch_pipeline.py` adds `execute_batch()`,
+which calls `src.pipeline.monthly_pipeline.execute` once per month,
+unchanged — no new SQL, no new BigQuery calls beyond a single live
+source-range fetch shared by the whole batch. Before any month is
+processed, `src/pipeline/batch_period.py`'s `preflight_validate_range`
+checks the ENTIRE requested range against the live effective shared
+source range (reusing `month_period.parse_month_period`); if any month
+fails, the whole batch is rejected up front and NOTHING is attempted.
+This whole-range rejection reuses Stage 4's OWN exit code 4
+(`EXIT_INVALID_MONTH`, aliased as `EXIT_INVALID_RANGE` in
+`batch_pipeline.py` for readability at call sites) — broadened in the
+project-level exit-code table to mean "invalid or unavailable
+month/range" rather than a brand-new code, since a whole-range
+rejection is the same category of problem (requested period not
+covered by the live source data) as a single invalid month. By default
+the batch stops at the first month that fails and logs the rest as
+skipped (`reason: stopped_after_failure`); the `--continue-on-error`
+flag (`scripts/run_batch_pipeline.py`) processes every requested month
+regardless of earlier failures. The overall batch exit code is 0 if
+every month succeeded, otherwise the exit code of the FIRST month that
+failed IN CHRONOLOGICAL ORDER (5/6/7, delegated unchanged from that
+month's own Stage 4 result) — no new code is invented for "some months
+failed."
+**Alternatives considered:** Lazy per-month validation only (skip the
+whole-range preflight) — rejected, since it would let several months
+load successfully before discovering a later month is unavailable,
+leaving a half-finished batch with no up-front warning. A dedicated new
+exit code for whole-range preflight failure (distinct from Stage 4's
+single-month code) — rejected on owner review: it fragmented the
+project's exit-code table for what is the same underlying failure
+category (an unavailable period), and collided with the reserved
+meaning of 8 (see D-026).
+**Note:** An earlier draft of this decision used exit code 8 for the
+whole-range preflight failure. That was corrected before this stage was
+committed — 8 is reserved for logging failures (D-026); the preflight
+case returns 4.
+
+### D-026 — Unified `"month_run"` JSONL record type; exit code 8 reserved for run-log write failures
+**Status:** Accepted (revised before commit — see note below)
+**Context:** A multi-month batch needs a durable, machine-readable
+record of what happened per month — separate from stdout, which
+`--continue-on-error` runs can make long and hard to scan. Two separate
+concerns came up on review: (1) a skipped month is still information
+about that month, not a different kind of event, so it shouldn't be a
+structurally different record type from an attempted month; and (2) the
+run log is itself a dependency the batch relies on — if it can't be
+written (disk full, permission revoked, log directory removed mid-run),
+that failure needs its own distinct, honest exit code rather than
+silently reporting whatever the batch's data-level outcome would
+otherwise have been.
+**Decision:** `src/pipeline/batch_log.py`'s `JsonlBatchLogger` writes one
+line of JSON per record to `logs/batch_runs/batch_{run_id}.jsonl`
+(flushed after every write), with exactly two record types:
+`"month_run"` — one per REQUESTED month, whether it was actually
+attempted (`status`: "success"/"failure", carrying that month's own
+Stage 4 exit code) or never attempted (`status`: "skipped", carrying a
+`reason`: "preflight_failed" or "stopped_after_failure") — and
+`"batch_summary"` — exactly one final record per run, with aggregate
+counts, the overall exit code, and `total_estimated_bytes` (the sum of
+every attempted month's captured `--dry-run` bytes estimate when
+`dry_run` is true; `null` in normal and `--validate-only` mode).
+`total_estimated_bytes` is captured by wrapping each month's `print_fn`
+to parse the number out of the line `monthly_pipeline.execute` already
+prints for a dry run (`"[DRY RUN] estimated bytes processed: <n>"`) —
+no dry-run query logic is duplicated to compute it. Every logger call in
+`execute_batch()` is wrapped by `_safe_log()`; if any write raises, the
+batch stops immediately and returns exit code 8 (logging failure),
+taking priority over whatever the batch's outcome would otherwise have
+been, since a run log that fails partway through can't be trusted for
+the rest of the run either. `logs/` is already covered by `.gitignore`
+— no runtime log is ever committed. The logger is injected into
+`execute_batch()` the same way `read_client`/`query_client`/`loader`
+are injected into `monthly_pipeline.execute()`, so batch-level tests
+substitute an in-memory fake and never touch the filesystem.
+**Alternatives considered:** Separate `"month"` and `"skipped"` record
+types (an earlier draft) — rejected on owner review: it split one
+concept (what happened to this requested month) across two schemas for
+no benefit, and made "every requested month gets exactly one record"
+harder to state and verify. Swallowing run-log write failures silently
+(logging a best-effort warning to stdout only, still returning the
+batch's data-level exit code) — rejected, since an unwritten log entry
+for a month that actually loaded live data would be a silent gap in the
+project's persistent record (CLAUDE.md rule 4).
+**Note:** An earlier draft of this decision used two record types
+(`"month"` / `"skipped"`) and did not define exit code 8 at all. Both
+were corrected before this stage was committed.

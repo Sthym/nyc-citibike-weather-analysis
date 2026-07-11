@@ -125,7 +125,7 @@ assumed cause.
 
 ## Getting started
 
-Three runnable entry points exist so far, all read-only except where noted:
+Four runnable entry points exist so far, all read-only except where noted:
 
 - `scripts/validate_source_metadata.py` (Stage 2) — validates the two
   provided source tables' metadata against verified Stage 1 findings.
@@ -152,8 +152,26 @@ Three runnable entry points exist so far, all read-only except where noted:
   compatibility wrapper around the same pipeline, fixed to January 2025)
   — writes to the original `citibike_weather_prototype_2025_01` table,
   kept separate from anything the general Stage 4 CLI produces.
+- `scripts/run_batch_pipeline.py --start-year YYYY --start-month MM --end-year YYYY --end-month MM` (Stage 5) — runs the SAME Stage 4
+  pipeline once per month across a range, after a STRICT whole-range
+  preflight check (every requested month must be fully covered by the
+  live shared source range, or nothing runs — this returns exit code 4,
+  the same code Stage 4 uses for a single invalid/unavailable month). By
+  default stops at the first month that fails; pass `--continue-on-error`
+  to process every requested month regardless — the returned code is
+  then the FIRST failed month's own code, in chronological order.
+  Supports the same `--dry-run` / `--validate-only` modes, applied to
+  every month; `--dry-run`'s bytes-processed estimate is summed across
+  the whole range. Writes a JSONL run log (`logs/batch_runs/`,
+  gitignored): one `"month_run"` record per REQUESTED month (attempted
+  or skipped) and exactly one final `"batch_summary"` record. See
+  `src/pipeline/batch_pipeline.py` for the full exit-code table: 0
+  success, 1 unexpected error, 2 CLI usage error, 3 configuration error,
+  4 invalid/unavailable month or range, 5 authentication/query error, 6
+  load error, 7 validation failure, 8 logging failure (the run log
+  itself could not be written).
 
-All three only ever write to the destination you configure below —
+All four only ever write to the destination you configure below —
 never to the `nyu-datasets` source project, and never by auto-creating
 a dataset.
 
