@@ -129,3 +129,70 @@ Objectives:
   perfect.
 - The join-coverage number (4,736 / 4,738 = 99.96%, with a clean
   explanation for the 2 misses) is a good, simple, quotable stat.
+---
+
+## Stage 2 – BigQuery Extraction Foundation
+
+### Objective
+
+Build and verify a reusable framework for validating BigQuery source metadata before implementing the ETL pipeline.
+
+### Completed
+
+- Implemented extraction modules for configuration, table ID validation, BigQuery client, and metadata validation.
+- Added a command-line validation script.
+- Added unit tests covering configuration, table ID validation, BigQuery client, and metadata validation.
+
+### Verified Findings
+
+#### Local unit tests
+
+Command:
+
+```bash
+python -m pytest
+```
+
+Result:
+
+- 34 tests passed.
+
+#### Live BigQuery validation
+
+Command:
+
+```bash
+python scripts/validate_source_metadata.py
+```
+
+Results:
+
+**nyu-datasets.citibike.m_daily_trips**
+
+- PASS
+- row_count: 4738
+- distinct_dates: 4738
+- null_dates: 0
+- min_date: 2013-06-01
+- max_date: 2026-05-31
+
+**nyu-datasets.weather.m_weather_daily_nyc**
+
+- PASS
+- row_count: 54912
+- distinct_dates: 54912
+- null_dates: 0
+- min_date: 1876-01-01
+- max_date: 2026-05-29
+
+### Engineering Reflections
+
+- Unit tests verified the implementation logic without requiring network access.
+- Live validation confirmed authentication, configuration, permissions, and expected BigQuery metadata.
+- The reliable project testing command is:
+
+```bash
+python -m pytest
+```
+
+because the standalone `pytest` command resolved to the Anaconda installation instead of the project's virtual environment.
