@@ -37,10 +37,11 @@ An end-to-end ETL pipeline that:
 
 ## Project status
 
-**Stage 0 — Repository Foundation.** No extraction, transformation, loading,
-or dashboard code exists yet. This stage only establishes documentation,
-conventions, and folder structure. See `PROJECT_PLAN.md` for the full staged
-roadmap and `TASKS.md` for the current backlog.
+**Stage 3 — One-Month ETL Prototype (implemented, not yet reviewed/merged).**
+A read-only BigQuery metadata validator (Stage 2) and a one-month
+(January 2025) end-to-end extract-join-validate-load prototype (Stage 3)
+now exist. See `PROJECT_PLAN.md` for the full staged roadmap and
+`TASKS.md` for the current backlog.
 
 ## Key project documents
 
@@ -122,12 +123,21 @@ assumed cause.
 
 ## Getting started
 
-Stage 2 has added the first runnable code: a read-only BigQuery metadata
-validator (`src/extraction/`), used via
-`scripts/validate_source_metadata.py`. No extraction, transformation,
-loading, or dashboard code exists yet.
+Two runnable entry points exist so far, both read-only except where noted:
 
-To run it:
+- `scripts/validate_source_metadata.py` (Stage 2) — validates the two
+  provided source tables' metadata against verified Stage 1 findings.
+  Read-only.
+- `scripts/run_prototype_january_2025.py` (Stage 3) — loads a one-month
+  (January 2025) join of the full Citi Bike shape and curated weather
+  fields into **your own** destination BigQuery project/dataset via an
+  idempotent `CREATE OR REPLACE TABLE`, then re-reads both source and
+  destination tables to run the V1–V11 validation suite and prints a
+  PASS/FAIL report. This is the only script that writes anywhere, and it
+  only ever writes to the destination you configure below — never to the
+  `nyu-datasets` source project, and never by auto-creating a dataset.
+
+To run either:
 
 1. Install Python 3.10+ and the dependencies in `requirements.txt`
    (`pip install -r requirements.txt`).
@@ -138,8 +148,17 @@ To run it:
    project — see `config/.env.example`). `BQ_CITIBIKE_TABLE`,
    `BQ_WEATHER_TABLE`, and `BQ_LOCATION` all have verified defaults and
    don't need to be set unless you want to override them.
-4. Run `python scripts/validate_source_metadata.py`.
+4. For the Stage 3 prototype only: also set `BQ_DESTINATION_DATASET` to
+   an **existing** dataset in your own project (required, no default —
+   this script never creates one); `BQ_DESTINATION_PROJECT_ID` is
+   optional and defaults to `GCP_PROJECT_ID`.
+5. Run `python scripts/validate_source_metadata.py` and/or
+   `python scripts/run_prototype_january_2025.py`.
 
-Unit tests (`pytest`) require no live BigQuery access and no
-credentials — they run entirely against mocked/fake clients and
-in-memory fixtures.
+Unit tests (`python -m pytest tests/unit`) require no live BigQuery access
+and no credentials — they run entirely against mocked/fake clients and
+in-memory fixtures. `pytest.ini` limits default test discovery to
+`tests/unit`; the one live-write check
+(`tests/integration/test_prototype_live.py`) is excluded by default and
+must be run explicitly:
+`RUN_LIVE_BIGQUERY_TESTS=1 python -m pytest tests/integration -m integration`.

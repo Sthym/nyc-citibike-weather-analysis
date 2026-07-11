@@ -55,7 +55,54 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [ ] Log an extraction manifest (files, row/byte counts)
 - [ ] Verify counts against source listing
 
-## Stage 3 — Transformation / Schema Standardization
+## Stage 3 — One-Month ETL Prototype (January 2025)
+
+**Note on numbering:** This "Stage 3" follows the ad-hoc stage sequence
+used in the actual implementation work (0 foundation, 1 source
+investigation, 2 extraction foundation, 3 this one-month prototype), not
+`PROJECT_PLAN.md`'s original Stage 3–6 breakdown (Transformation /
+Loading / SQL Models / Weather Join), which predates the provided-dataset
+pivot (D-009) and has not been renumbered or reconciled with this
+sequence. This prototype's scope actually spans what `PROJECT_PLAN.md`
+describes across its Stages 3–6, compressed into a single one-month
+vertical slice. Reconciling the two numbering schemes is an open item —
+not resolved in this update, and `PROJECT_PLAN.md` is left as-is here.
+
+- [x] Add `pytest.ini` (`testpaths = tests/unit`, registers the
+      `integration` marker) so a bare `pytest`/`python -m pytest` never
+      collects the live integration test
+- [x] Implement `src/transformation/prototype_query.py` — pure query
+      builder: `month_range()` + parameterized (`@start_date`/`@end_date`)
+      join SQL, full 15-column Citi Bike shape, 8 curated weather fields,
+      `is_rainy`/`is_snowy` cast to `BOOL`, `weekday`, `weather_matched`
+- [x] Implement `src/transformation/prototype_validator.py` — pure V1–V11
+      validation logic; V8/V9 reclassified as source-quality findings,
+      not failures (see `DECISIONS.md` D-019)
+- [x] Implement `src/loading/prototype_loader.py` — idempotent
+      `CREATE OR REPLACE TABLE` load, explicit destination
+      project/dataset, no auto-creation, derived table name, query
+      parameters for the date range
+- [x] Implement `scripts/run_prototype_january_2025.py` — the only
+      Stage 3 module that touches live BigQuery; loads the prototype,
+      re-reads source + destination, runs validation, prints a PASS/FAIL
+      report with matched/unmatched/match-rate
+- [x] Add unit tests: `test_prototype_query.py`, `test_prototype_validator.py`
+      (full V1–V11 coverage), `test_prototype_loader.py` — all mocked/fake,
+      no network access
+- [x] Add `tests/integration/test_prototype_live.py` — opt-in only via
+      `RUN_LIVE_BIGQUERY_TESTS=1`, not run by default
+- [x] Update `config/.env.example` with `BQ_DESTINATION_PROJECT_ID` /
+      `BQ_DESTINATION_DATASET`
+- [x] Log Stage 3 design decisions in `DECISIONS.md` (D-017–D-021)
+- [x] Document the Stage 3 destination schema in `DATA_DICTIONARY.md`
+      (Section 5a)
+- [x] Run `python -m pytest tests/unit` locally — all passing
+- [ ] Owner review and approval of the Stage 3 prototype
+- [ ] Run `scripts/run_prototype_january_2025.py` against live BigQuery
+      and record the observed PASS/FAIL result in `ENGINEERING_LOG.md`
+- [ ] Commit and push Stage 3 (only after approval)
+
+## Stage 3 (PROJECT_PLAN.md numbering) — Transformation / Schema Standardization (full historical range)
 
 - [ ] Define canonical trip-level schema in `DATA_DICTIONARY.md`
 - [ ] Implement mapping for each known source schema version

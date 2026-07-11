@@ -211,3 +211,103 @@ dates are missing and why — unlike the Citi Bike table's missing dates
 weather table's missing dates have not yet been enumerated. Further
 investigation is required to identify them before any cause is
 considered.
+
+### D-017 — Stage 3 scope: one-month (January 2025) prototype, explicit destination controls
+**Status:** Accepted
+**Context:** Stage 3 is the first stage that writes anything, so the
+write path needs firm guardrails before any code is implemented.
+**Decision:** Stage 3 implements a single end-to-end prototype scoped to
+one calendar month (January 2025) only — not the full historical range.
+The load target is controlled entirely by caller-supplied configuration:
+`BQ_DESTINATION_PROJECT_ID` (falls back to `GCP_PROJECT_ID` if unset) and
+`BQ_DESTINATION_DATASET` (required, no default). The destination dataset
+is never auto-created — if it does not already exist, the load fails with
+BigQuery's own "not found" error rather than this code creating one. The
+destination table name is derived (`citibike_weather_prototype_2025_01`),
+not accepted as a free-form argument, so a caller cannot point the load at
+an arbitrary table. The load uses `CREATE OR REPLACE TABLE ... AS SELECT`
+(CTAS), so re-running the prototype is idempotent — it fully replaces the
+table's contents in one atomic statement rather than appending duplicate
+rows.
+**Alternatives considered:** Defaulting the destination to the same
+project as the source tables — rejected, since the source project
+(`nyu-datasets`) is a shared teaching project, not somewhere this project
+should ever write.
+
+### D-018 — Full 15-column Citi Bike shape and curated 8-field weather selection retained; no wildcard select
+**Status:** Accepted
+**Context:** An earlier draft considered `c.* EXCEPT(date)` / `w.*` for
+brevity.
+**Decision:** The prototype query explicitly lists all 15 confirmed
+Citi Bike columns (`DATA_DICTIONARY.md` Section 1a) and the 8 curated
+weather fields (`tmin_f`, `tmax_f`, `tavg_f`, `prcp_inches`, `is_rainy`,
+`snow_inches`, `is_snowy`, `season`) by name — no `SELECT *` or `EXCEPT`
+wildcard anywhere in `src/transformation/prototype_query.py`. This makes
+the destination schema self-documenting from the query text and prevents
+an unreviewed upstream schema change from silently changing the
+destination table's shape.
+
+### D-019 — V1-V11 validation rule set; V8/V9 reclassified as source-quality findings, not failures
+**Status:** Accepted
+**Context:** The Stage 3 prototype needs both structural validation
+(row counts, date completeness, join integrity) and reconciliation
+checks carried over from Stage 1 (rider-type and geography totals,
+D-012).
+**Decision:** `src/transformation/prototype_validator.py` implements 11
+rules:
+- V1 destination row count == Citi Bike source row count (for the month)
+- V2 no duplicate dates (row count == distinct dates)
+- V3 no null dates
+- V4 destination date range falls within the requested month
+- V5 additive Citi Bike columns: `SUM(destination) == SUM(source)`
+- V6 non-additive Citi Bike columns (avg/median/distance): per-date,
+  null-safe, tolerance-based comparison
+- V7 `weather_matched` is never null; matched + unmatched == total rows
+- V8 rider-type reconciliation (member + casual == total)
+- V9 geography reconciliation (nyc + jc == total)
+- V10 non-additive weather columns, compared only for matched dates,
+  null-safe and tolerance-based
+- V11 domain check: non-null source `is_rainy`/`is_snowy` values must be
+  in `{0, 1}` before being cast to `BOOL`
+
+V8 and V9 are deliberately kept out of `mismatches` and reported instead
+as `source_quality_findings` (affected dates and exact differences). This
+is because the underlying discrepancy (D-012) pre-exists in the source
+table — it is not something this transformation introduces — so it must
+never flip the prototype's overall `passed` result to `False`, and the
+source values are never altered to force reconciliation.
+**Alternatives considered:** Treating V8/V9 as hard failures like the
+other rules — rejected, since that would misrepresent a known,
+pre-existing source condition as a bug in this project's transformation
+logic.
+
+### D-020 — Null-safe, tolerance-based comparisons; V10's Boolean comparison basis is `CAST(source AS BOOL)`
+**Status:** Accepted
+**Context:** Weather fields are nullable, and Citi Bike/weather float
+columns should not be compared with exact equality.
+**Decision:** All FLOAT64 comparisons (V6, V10's numeric fields) use a
+null-safe, tolerance-based check: both-null counts as equal, exactly one
+null counts as a mismatch, otherwise compare within a fixed tolerance
+(1e-6) rather than exact equality. Exact-value comparisons (season,
+weather-matched flag) rely on plain equality, which is already null-safe
+in Python (`None == None` is `True`). V10's Boolean indicator comparison
+is explicitly defined as comparing the destination's stored `is_rainy` /
+`is_snowy` (BOOL) against `CAST(source.is_rainy AS BOOL)` /
+`CAST(source.is_snowy AS BOOL)` — implemented via a small, pure,
+unit-tested helper (`cast_int_indicator_to_bool`) that mirrors BigQuery's
+own `CAST(... AS BOOL)` semantics, rather than assuming the destination
+and source values already agree.
+
+### D-021 — Query parameters for the date range; matched/unmatched/match-rate reporting added
+**Status:** Accepted
+**Context:** Embedding date literals directly in SQL text is both a
+minor injection-surface concern and makes the query harder to reuse for
+a different month later.
+**Decision:** `@start_date` and `@end_date` are bound as real BigQuery
+query parameters (`bigquery.ScalarQueryParameter`) everywhere the
+prototype month is used — the load query, the Citi Bike source scoping
+query, and the weather source scoping query. No date literal is ever
+interpolated into SQL text. The validation report additionally surfaces
+`matched_weather_rows`, `unmatched_weather_rows`, and
+`weather_match_rate` (matched / total destination rows), extending the
+join-coverage reporting pattern already established for Stage 1 (D-015).

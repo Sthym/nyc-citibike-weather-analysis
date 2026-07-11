@@ -145,6 +145,26 @@ explained by the two tables' differing as-of dates, not a join defect
 exactly these 2 trailing dates without weather data until the weather
 source is refreshed.
 
+## 5a. Stage 3 prototype — destination schema (January 2025 only)
+
+**Status: implemented (Stage 3), scoped to one month.** Table:
+`{destination_project}.{destination_dataset}.citibike_weather_prototype_2025_01`
+(destination project/dataset are caller-supplied — see
+`config/.env.example`; never hardcoded, never auto-created).
+
+| Column | Source | Notes |
+|---|---|---|
+| `date` … `avg_distance_meters` (15 columns) | `nyu-datasets.citibike.m_daily_trips` | Full confirmed shape from Section 1a, selected explicitly (no `c.*`) |
+| `weekday` | Derived | `FORMAT_DATE('%A', date)` |
+| `tmin_f`, `tmax_f`, `tavg_f`, `prcp_inches`, `snow_inches`, `season` | `nyu-datasets.weather.m_weather_daily_nyc` | Curated subset, selected explicitly (no `w.*`) |
+| `is_rainy`, `is_snowy` | `nyu-datasets.weather.m_weather_daily_nyc` | Source INT64 0/1 indicators, `CAST(... AS BOOL)` at selection time |
+| `weather_matched` | Derived | `(weather.date IS NOT NULL)` — `TRUE` when the Citi Bike date has a weather match |
+
+Validation rules (V1–V11) implemented in
+`src/transformation/prototype_validator.py`; see `DECISIONS.md` D-017
+through D-021 for the full rationale, including why V8/V9 are reported as
+source-quality findings rather than validation failures.
+
 ## 6. Data-quality check reference
 
 These checks (implemented in `tests/data_quality/` during Stage 7, but
