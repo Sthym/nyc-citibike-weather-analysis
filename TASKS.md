@@ -33,8 +33,24 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Stage 2 — Extraction
 
-- [ ] Design extraction script interface (configurable date range)
-- [ ] Implement download logic for all known Citi Bike file formats
+- [x] Design and implement a read-only BigQuery extraction foundation
+      (`src/extraction/`): table-ID validation, config loading (ADC only,
+      no service-account keys), a read-only client wrapper, and metadata
+      validation against verified Stage 1 findings
+- [x] Add `scripts/validate_source_metadata.py` as the single entry point
+      that touches live BigQuery
+- [x] Add unit tests for all of the above (`tests/unit/test_table_id.py`,
+      `test_config.py`, `test_bigquery_client.py`,
+      `test_metadata_validator.py`) — all mocked, no network access
+- [x] Add `requirements.txt`
+- [ ] Owner review and approval of the Stage 2 extraction foundation
+- [ ] Commit and push Stage 2 foundation (only after approval)
+- [ ] Design extraction script interface (configurable date range) —
+      *revisit: source is a provided BigQuery table, not files to
+      download; scope may be much smaller than originally planned (see
+      DECISIONS.md D-009)*
+- [ ] Implement download logic for all known Citi Bike file formats —
+      *likely not applicable; see above*
 - [ ] Add idempotency (safe re-runs, no duplicate downloads)
 - [ ] Log an extraction manifest (files, row/byte counts)
 - [ ] Verify counts against source listing

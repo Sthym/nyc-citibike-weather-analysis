@@ -122,6 +122,24 @@ assumed cause.
 
 ## Getting started
 
-Not yet applicable — no runnable code exists in Stage 0. Setup instructions
-(GCP project requirements, Python version, dependency installation) will be
-added here once Stage 2 (Extraction) begins.
+Stage 2 has added the first runnable code: a read-only BigQuery metadata
+validator (`src/extraction/`), used via
+`scripts/validate_source_metadata.py`. No extraction, transformation,
+loading, or dashboard code exists yet.
+
+To run it:
+
+1. Install Python 3.10+ and the dependencies in `requirements.txt`
+   (`pip install -r requirements.txt`).
+2. Authenticate with `gcloud auth application-default login`. This
+   project uses Application Default Credentials only — service-account
+   key files are not supported or referenced anywhere in this repo.
+3. Set `GCP_PROJECT_ID` in your environment (your own billing/query
+   project — see `config/.env.example`). `BQ_CITIBIKE_TABLE`,
+   `BQ_WEATHER_TABLE`, and `BQ_LOCATION` all have verified defaults and
+   don't need to be set unless you want to override them.
+4. Run `python scripts/validate_source_metadata.py`.
+
+Unit tests (`pytest`) require no live BigQuery access and no
+credentials — they run entirely against mocked/fake clients and
+in-memory fixtures.
