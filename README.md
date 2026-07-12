@@ -37,13 +37,18 @@ An end-to-end ETL pipeline that:
 
 ## Project status
 
-**Stage 4 — Reusable Monthly ETL Pipeline (implemented, not yet
+**Stage 6 — Dashboard-Ready Analytics Table (implemented, not yet
 reviewed/merged).** A read-only BigQuery metadata validator (Stage 2),
 the original January-2025-only prototype (Stage 3, committed/pushed,
-tag `stage3-complete`), and a generalized CLI that runs the same
-extract-join-validate-load pipeline for any valid month (Stage 4) now
-exist. See `PROJECT_PLAN.md` for the full staged roadmap and `TASKS.md`
-for the current backlog.
+tag `stage3-complete`), a generalized CLI that runs the same
+extract-join-validate-load pipeline for any valid month (Stage 4), a
+multi-month batch runner with JSONL run logging (Stage 5, tag
+`stage5-complete`), and a Stage 6 step that combines the existing
+monthly destination tables into one daily-grain
+`citibike_weather_analytics` table with dashboard-friendly derived
+fields (`temperature_band`, `rain_category`, `snow_category`) now exist.
+See `PROJECT_PLAN.md` for the full staged roadmap and `TASKS.md` for the
+current backlog.
 
 ## Key project documents
 
@@ -70,6 +75,7 @@ for the current backlog.
 | `src/extraction/` | Scripts that download raw Citi Bike trip data | Extraction |
 | `src/transformation/` | Scripts that standardize changing schemas into one canonical schema | Transformation |
 | `src/loading/` | Scripts that load standardized data into BigQuery | BigQuery loading |
+| `src/analytics/` | Stage 6: combine the monthly tables into the dashboard-ready `citibike_weather_analytics` table | SQL models / dashboard |
 | `src/utils/` | Shared helpers (config, logging, GCP auth) used across `src/` | All code stages |
 | `sql/models/staging/` | 1:1 SQL views over raw BigQuery tables | SQL models |
 | `sql/models/intermediate/` | SQL models combining/cleaning staging models | SQL models |
@@ -170,8 +176,23 @@ Four runnable entry points exist so far, all read-only except where noted:
   4 invalid/unavailable month or range, 5 authentication/query error, 6
   load error, 7 validation failure, 8 logging failure (the run log
   itself could not be written).
+- `scripts/build_analytics_table.py` (Stage 6) — combines the existing
+  `citibike_weather_monthly_YYYY_MM` destination tables into ONE
+  daily-grain `citibike_weather_analytics` table (one row per date),
+  adding the dashboard-friendly derived fields `temperature_band`,
+  `rain_category`, and `snow_category`. Reads the monthly destination
+  tables (never the raw sources) via an explicit, validated `UNION ALL`,
+  loads idempotently with `CREATE OR REPLACE TABLE`, and validates the
+  result (no duplicate/null dates; row-count, ride-count, weather-measure
+  and weather-indicator preservation vs. the source union; derived-field
+  domain and `Unknown`↔NULL consistency). Supports `--dry-run` and
+  `--validate-only`, and an optional `--start`/`--end` (YYYY-MM) window
+  (months in that window with no monthly table are warned about, not
+  fatal). Reuses the shared exit-code scheme (0/1/2/3/5/6/7, plus 4 for
+  "no monthly tables to combine"); writes no run log, so exit code 8 is
+  not used. See `src/analytics/analytics_pipeline.py`.
 
-All four only ever write to the destination you configure below —
+All five only ever write to the destination you configure below —
 never to the `nyu-datasets` source project, and never by auto-creating
 a dataset.
 

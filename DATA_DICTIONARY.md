@@ -189,6 +189,88 @@ match-rate reporting. Exit codes and `--dry-run`/`--validate-only`
 behavior: see `DECISIONS.md` D-024 and
 `src/pipeline/monthly_pipeline.py`.
 
+## 5c. Stage 6 analytics table — dashboard-ready daily grain
+
+**Status: implemented (Stage 6).** Table:
+`{destination_project}.{destination_dataset}.citibike_weather_analytics`
+— a single, fixed name (not month-suffixed, not user-supplied), so
+re-runs overwrite it via `CREATE OR REPLACE TABLE` (see `DECISIONS.md`
+D-030). Deliberately **not** prefixed `citibike_weather_monthly_`, so it
+can never be swept back into monthly-table discovery.
+
+Built by combining the existing Stage 4/5 monthly destination tables
+(`citibike_weather_monthly_YYYY_MM`, §5b) with a plain `UNION ALL` —
+never the raw public sources, never a wildcard. The monthly tables are
+non-overlapping by construction, so the union is naturally one row per
+`date`; there is **no** silent de-duplication (a duplicate date would
+indicate an upstream bug and fails validation rule A1). Columns carried
+from the monthly output are byte-for-byte unchanged; only the three
+derived fields are added.
+
+| Column | Type | Source |
+|---|---|---|
+| `date` | DATE | carried (grain key) |
+| `num_trips` | INT64 | carried — total rides/day |
+| `num_member_trips` | INT64 | carried |
+| `num_casual_trips` | INT64 | carried |
+| `avg_trip_duration_minutes` | FLOAT64 | carried |
+| `weekday` | STRING | carried (day name; from the Stage 3/4 `FORMAT_DATE('%A', date)`) |
+| `season` | STRING | carried |
+| `tmin_f` / `tmax_f` / `tavg_f` | FLOAT64 | carried |
+| `prcp_inches` / `snow_inches` | FLOAT64 | carried |
+| `is_rainy` / `is_snowy` | BOOL | carried |
+| `weather_matched` | BOOL | carried |
+| `temperature_band` | STRING | **derived** from `tavg_f` |
+| `rain_category` | STRING | **derived** from `is_rainy` |
+| `snow_category` | STRING | **derived** from `is_snowy` |
+
+The wider monthly column set (NYC/JC splits, classic/electric,
+median duration, distance) is intentionally **not** carried, to keep the
+analytics table minimal and focused on the seven dashboard metrics
+(`DECISIONS.md` D-029). There is **no** provenance/`source_month` column
+(owner decision).
+
+### Derived-field definitions
+
+**`temperature_band`** — from `tavg_f` (°F). Lower-inclusive /
+upper-exclusive bands; a NULL `tavg_f` (unmatched-weather row) maps to
+`Unknown`:
+
+| Band | Condition on `tavg_f` |
+|---|---|
+| `Unknown` | IS NULL |
+| `Freezing` | < 32 |
+| `Cold` | 32 – < 50 |
+| `Mild` | 50 – < 70 |
+| `Warm` | 70 – < 85 |
+| `Hot` | ≥ 85 |
+
+**`rain_category`** — reuses the existing `is_rainy` BOOL indicator
+(**not** re-thresholded from `prcp_inches`, so it can never diverge from
+the monthly definition): `TRUE → 'Rainy'`, `FALSE → 'Dry'`,
+`NULL → 'Unknown'`.
+
+**`snow_category`** — reuses the existing `is_snowy` BOOL indicator:
+`TRUE → 'Snowy'`, `FALSE → 'No Snow'`, `NULL → 'Unknown'`.
+
+(The underlying `is_rainy` / `is_snowy` rain-vs-dry and snow-vs-no-snow
+thresholds themselves are the Stage 3 curated-weather definitions in §4;
+Stage 6 categorizes on those booleans rather than redefining them.)
+
+### Validation (A1–A11, `src/analytics/analytics_validation.py`)
+
+A1 no duplicate dates · A2 no null dates · A3 row count preserved vs. the
+source union · A4 distinct-date count preserved · A5 ride counts
+(`num_trips`/`num_member_trips`/`num_casual_trips`) preserved · A6 weather
+measures (`prcp_inches`/`snow_inches`) preserved within float tolerance ·
+A7 weather indicators (`COUNTIF` of `is_rainy`/`is_snowy`/
+`weather_matched`) preserved · A8–A10 derived-field domain (each derived
+column only takes its allowed values) · A11 a derived category is
+`Unknown` **iff** its driving input is NULL. Preservation is
+analytics-vs-source only; A5 does **not** assert
+`num_member_trips + num_casual_trips == num_trips` (that rider-type
+identity is a known source condition — §1a, D-012 — not enforced here).
+
 ## 6. Data-quality check reference
 
 These checks (implemented in `tests/data_quality/` during Stage 7, but

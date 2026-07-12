@@ -479,3 +479,87 @@ project's persistent record (CLAUDE.md rule 4).
 **Note:** An earlier draft of this decision used two record types
 (`"month"` / `"skipped"`) and did not define exit code 8 at all. Both
 were corrected before this stage was committed.
+
+### D-027 — Stage 6 scope: one dashboard-ready analytics table; new `AnalyticsLoader` rather than changing `PrototypeLoader`
+
+**Status:** Accepted (owner-approved Stage 6 design).
+
+Stage 6 builds exactly one daily-grain, dashboard-ready table,
+`citibike_weather_analytics`, from the existing Stage 4/5 monthly
+destination tables (`citibike_weather_monthly_YYYY_MM`) — never the raw
+public sources, and never a BigQuery wildcard (an explicit, validated
+`UNION ALL` is deterministic and cannot accidentally sweep in the
+analytics table or any unrelated table). The monthly tables are
+non-overlapping, so the union is one row per `date` with no silent
+de-duplication; a duplicate date fails validation (A1) instead of being
+hidden. New analytics-specific logic lives in a new `src/analytics/`
+package (`analytics_query`, `discovery`, `analytics_validation`,
+`analytics_pipeline`), mirroring the existing extraction/transformation/
+loading/pipeline separation. The idempotent load is performed by a new,
+thin `AnalyticsLoader` in `src/loading/` (where loaders live per the
+README folder table), which reuses `PrototypeLoader`'s exact controls
+(explicit destination, never auto-create the dataset, validate every id,
+`CREATE OR REPLACE TABLE`, ADC only). **Alternatives considered:**
+extending `PrototypeLoader` to also build the analytics CTAS — rejected,
+because it is coupled to the month/date-parameterized prototype join and
+changing it would redesign committed Stage 3–5 code; a wildcard union —
+rejected for determinism/safety. `PrototypeLoader` is left untouched.
+
+### D-028 — Stage 6 exit codes reuse the shared scheme; exit code 4 for "no monthly tables"; exit code 8 not repurposed
+
+**Status:** Accepted.
+
+The analytics pipeline reuses Stage 4's exit-code constants 0–3, 5, 6, 7
+(imported from `monthly_pipeline`, never redefined). The "no
+`citibike_weather_monthly_YYYY_MM` tables to combine" precondition reuses
+exit code 4 (invalid/unavailable input) via an `EXIT_NO_SOURCE_TABLES`
+alias — the same aliasing precedent Stage 5 set with `EXIT_INVALID_RANGE`.
+Stage 6 writes no run log, so Stage 5's exit code 8 (logging failure) is
+neither used nor redefined here — it is preserved with its Stage 5
+meaning. **Alternative considered:** inventing a new exit code for "no
+source tables" — rejected to keep one small, shared, stable exit-code
+table across Stages 4–6.
+
+### D-029 — Analytics table carries a minimal focused column set
+
+**Status:** Accepted.
+
+The analytics table carries only the columns needed for the seven
+dashboard metrics plus the weather measures the derived bands are built
+from (`date`, `num_trips`, `num_member_trips`, `num_casual_trips`,
+`avg_trip_duration_minutes`, `weekday`, `season`, `tmin_f`, `tmax_f`,
+`tavg_f`, `prcp_inches`, `snow_inches`, `is_rainy`, `is_snowy`,
+`weather_matched`) plus the three derived fields. The wider monthly
+column set (NYC/JC splits, classic/electric counts, median duration,
+distance) is intentionally omitted to keep the table minimal; it can be
+added later without breaking existing dashboard columns. Preservation
+validation (A5) reconciles analytics-vs-source only and does not assert
+`member + casual == total` (a known source condition — D-012).
+
+### D-030 — Derived-field definitions; reuse existing `is_rainy`/`is_snowy`; single source of truth for thresholds
+
+**Status:** Accepted.
+
+`temperature_band` is derived from `tavg_f` (°F) with lower-inclusive/
+upper-exclusive bands (`Freezing` < 32, `Cold` 32–<50, `Mild` 50–<70,
+`Warm` 70–<85, `Hot` ≥ 85) and `Unknown` for NULL. `rain_category` and
+`snow_category` reuse the existing monthly `is_rainy`/`is_snowy` BOOL
+indicators (`Rainy`/`Dry`, `Snowy`/`No Snow`, `Unknown` for NULL) rather
+than re-thresholding `prcp_inches`/`snow_inches`, so the categories can
+never diverge from the monthly definition. Band thresholds/labels live
+once in `analytics_query.py` as constants; the SQL `CASE` expressions are
+generated from the same constants the Python classifier functions use,
+and a unit test asserts they agree — eliminating SQL/Python drift.
+Idempotency: the destination name is fixed (not caller-supplied) so
+re-runs always `CREATE OR REPLACE` the same table; the dataset is never
+auto-created.
+
+### D-031 — No `source_month`/provenance column in the analytics table
+
+**Status:** Accepted (owner change to the approved Stage 6 design).
+
+An earlier Stage 6 design draft included a `source_month` provenance
+column. Per owner decision it is removed entirely — absent from the
+schema, the SQL, the validation, the tests, and the documentation. The
+analytics table is a pure daily-grain combination of the monthly outputs
+with the three derived fields and nothing else.

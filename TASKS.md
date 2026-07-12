@@ -196,6 +196,63 @@ not resolved in this update, and `PROJECT_PLAN.md` is left as-is here.
       multi-month range and record results in `ENGINEERING_LOG.md`
 - [ ] Commit, push, and tag Stage 5 (only after approval)
 
+## Stage 6 — Dashboard-Ready Analytics Table
+
+**Note on numbering:** As with Stage 3–5, this "Stage 6" follows the
+ad-hoc implementation sequence (0 foundation, 1 source investigation,
+2 extraction foundation, 3 one-month prototype, 4 monthly pipeline,
+5 batch, 6 this analytics table), not `PROJECT_PLAN.md`'s original
+"Stage 6 — Weather Join" (which the Stage 3 prototype already subsumed).
+`PROJECT_PLAN.md` is left as-is; reconciling the two numbering schemes
+remains an open item.
+
+- [x] Add `src/analytics/analytics_query.py` — pure SQL builder: carried
+      column list, `UNION ALL` of the monthly tables (`build_union_select`),
+      full analytics `SELECT` with the three derived fields
+      (`build_analytics_select`), the fixed `citibike_weather_analytics`
+      name, and the `temperature_band`/`rain_category`/`snow_category`
+      threshold constants + Python classifiers (single source of truth so
+      SQL and Python cannot drift). No `source_month`.
+- [x] Add `src/analytics/discovery.py` — find the existing
+      `citibike_weather_monthly_YYYY_MM` destination tables to combine:
+      pure `select_monthly_table_ids` (regex filter, optional
+      `--start`/`--end` window, validate + chronological sort, raise
+      `NoMonthlyTablesError` if none) + `missing_months_in_range` +
+      a thin `list_tables` I/O wrapper. Never uses a wildcard; the
+      analytics and prototype tables are excluded by name.
+- [x] Add `src/loading/analytics_loader.py` — `AnalyticsLoader`: thin
+      sibling of `PrototypeLoader` (which is left untouched — see
+      `DECISIONS.md` D-027), idempotent `CREATE OR REPLACE TABLE ... AS
+      <analytics select>`, validates every source + destination id, never
+      auto-creates the dataset, ADC only
+- [x] Add `src/analytics/analytics_validation.py` — pure A1–A11 rules:
+      no duplicate/null dates; row-count, distinct-date, ride-count,
+      weather-measure, and weather-indicator preservation vs. the source
+      union; derived-field domain + `Unknown`↔NULL consistency
+- [x] Add `src/analytics/analytics_pipeline.py` — `execute()`: validate
+      destination id → discover → dry-run / validate-only / full CTAS →
+      re-read analytics + source union → validate. Reuses Stage 4 exit
+      codes 0–3/5/6/7; exit code 4 (via `EXIT_NO_SOURCE_TABLES`) for
+      "no monthly tables to combine" (see `DECISIONS.md` D-028); does
+      not use or redefine Stage 5's exit code 8
+- [x] Add `scripts/build_analytics_table.py` — the analytics CLI
+      (`--dry-run`, `--validate-only`, optional `--start`/`--end` YYYY-MM)
+- [x] Add unit tests: `test_analytics_query.py`, `test_analytics_discovery.py`,
+      `test_analytics_loader.py`, `test_analytics_validation.py`,
+      `test_analytics_pipeline.py` (happy path, validate-only,
+      dry-run-never-writes, no-tables→4, listing-error→5, load-error→6,
+      gather-error→5, bad-dataset→3, exit-code contract),
+      `test_build_analytics_cli.py` — all mocked/fake, no network access
+- [x] Add `tests/integration/test_analytics_live.py` — live `--dry-run`
+      and `--validate-only`; opt-in only via `RUN_LIVE_BIGQUERY_TESTS=1`;
+      never calls `loader.load()`
+- [x] Document Stage 6 in `README.md`, `DATA_DICTIONARY.md` (§5c +
+      derived-field definitions), and `DECISIONS.md` (D-027–D-031)
+- [ ] Owner review and approval of the Stage 6 analytics table
+- [ ] Run `scripts/build_analytics_table.py` against live BigQuery and
+      record results in `ENGINEERING_LOG.md`
+- [ ] Commit, push, and tag Stage 6 (only after approval)
+
 ## Stage 3 (PROJECT_PLAN.md numbering) — Transformation / Schema Standardization (full historical range)
 
 - [ ] Define canonical trip-level schema in `DATA_DICTIONARY.md`
